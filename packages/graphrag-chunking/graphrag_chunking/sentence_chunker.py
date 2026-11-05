@@ -32,17 +32,15 @@ class SentenceChunker(Chunker):
         results = create_chunk_results(
             sentences, transform=transform, encode=self._encode
         )
-        # nltk sentence tokenizer may trim whitespace, so we need to adjust start/end chars
-        for index, result in enumerate(results):
-            txt = result.text
-            start = result.start_char
-            actual_start = text.find(txt, start)
-            delta = actual_start - start
-            if delta > 0:
-                result.start_char += delta
-                result.end_char += delta
-                # bump the next to keep the start check from falling too far behind
-                if index < len(results) - 1:
-                    results[index + 1].start_char += delta
-                    results[index + 1].end_char += delta
+        # nltk may trim whitespace; locate each original sentence in the source
+        # with a running cursor so repeated sentences and transforms (which
+        # change result.text) still get the correct span.
+        cursor = 0
+        for result in results:
+            actual_start = text.find(result.original, cursor)
+            if actual_start < 0:
+                continue
+            result.start_char = actual_start
+            result.end_char = actual_start + len(result.original) - 1
+            cursor = actual_start + len(result.original)
         return results

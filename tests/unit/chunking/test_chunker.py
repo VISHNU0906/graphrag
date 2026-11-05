@@ -95,7 +95,7 @@ class TestRunTokens:
 
 def test_split_text_str_empty():
     tokenizer = get_tokenizer()
-    result = split_text_on_tokens(
+    result, starts = split_text_on_tokens(
         "",
         chunk_size=5,
         chunk_overlap=2,
@@ -103,6 +103,7 @@ def test_split_text_str_empty():
         decode=tokenizer.decode,
     )
     assert result == []
+    assert starts == []
 
 
 def test_split_text_on_tokens():
@@ -124,7 +125,7 @@ def test_split_text_on_tokens():
         "est only.",
     ]
 
-    result = split_text_on_tokens(
+    result, starts = split_text_on_tokens(
         text=text,
         chunk_overlap=5,
         chunk_size=10,
@@ -132,6 +133,9 @@ def test_split_text_on_tokens():
         encode=lambda text: mocked_tokenizer.encode(text),
     )
     assert result == expected_splits
+    # With char-level encode/decode, starts track the real overlapping window offsets.
+    assert starts[0] == 0
+    assert all(text[s : s + len(c)] == c for c, s in zip(result, starts, strict=True))
 
 
 def test_split_text_on_tokens_one_overlap():
@@ -156,7 +160,7 @@ def test_split_text_on_tokens_one_overlap():
         " only.",
     ]
 
-    result = split_text_on_tokens(
+    result, _starts = split_text_on_tokens(
         text=text,
         chunk_size=2,
         chunk_overlap=1,
@@ -179,7 +183,7 @@ def test_split_text_on_tokens_no_overlap():
         ".",
     ]
 
-    result = split_text_on_tokens(
+    result, _starts = split_text_on_tokens(
         text=text,
         chunk_size=3,
         chunk_overlap=0,
@@ -188,3 +192,34 @@ def test_split_text_on_tokens_no_overlap():
     )
 
     assert result == expected_splits
+
+
+def test_token_chunker_overlap_offsets():
+    """Overlapping token windows must report the real character span (#2595)."""
+    from graphrag_chunking.token_chunker import TokenChunker
+
+    def enc(s: str) -> list[int]:
+        return [ord(c) for c in s]
+
+    def dec(t: list[int]) -> str:
+        return "".join(map(chr, t))
+
+    text = "abcdefghijklmnopqrstuvwxyz"
+    chunks = TokenChunker(size=10, overlap=4, encode=enc, decode=dec).chunk(text)
+    assert len(chunks) > 1
+    for c in chunks:
+        assert text[c.start_char : c.end_char + 1] == c.original
+
+
+def test_sentence_chunker_repeated_sentences():
+    """Repeated sentences must not reuse an earlier span (#2595)."""
+    from graphrag_chunking.sentence_chunker import SentenceChunker
+
+    bootstrap()
+    text = "Go.   Go.   Go.   Go."
+    chunks = SentenceChunker().chunk(text)
+    starts = [c.start_char for c in chunks]
+    assert starts == sorted(starts)
+    assert len(set(starts)) == len(starts)
+    for c in chunks:
+        assert text[c.start_char : c.end_char + 1] == c.original

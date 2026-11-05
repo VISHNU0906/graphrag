@@ -32,14 +32,16 @@ class TokenChunker(Chunker):
         self, text: str, transform: Callable[[str], str] | None = None
     ) -> list[TextChunk]:
         """Chunk the text into token-based chunks."""
-        chunks = split_text_on_tokens(
+        chunks, starts = split_text_on_tokens(
             text,
             chunk_size=self._size,
             chunk_overlap=self._overlap,
             encode=self._encode,
             decode=self._decode,
         )
-        return create_chunk_results(chunks, transform=transform, encode=self._encode)
+        return create_chunk_results(
+            chunks, transform=transform, encode=self._encode, starts=starts
+        )
 
 
 def split_text_on_tokens(
@@ -48,9 +50,16 @@ def split_text_on_tokens(
     chunk_overlap: int,
     encode: Callable[[str], list[int]],
     decode: Callable[[list[int]], str],
-) -> list[str]:
-    """Split a single text and return chunks using the tokenizer."""
-    result = []
+) -> tuple[list[str], list[int]]:
+    """Split a single text into token windows.
+
+    Returns ``(chunks, starts)`` where ``starts[i]`` is the character offset of
+    ``chunks[i]`` in the source text, approximated as
+    ``len(decode(tokens[:token_start]))``. Callers that only need the chunk
+    strings can ignore the second element.
+    """
+    chunks: list[str] = []
+    starts: list[int] = []
     input_tokens = encode(text)
 
     start_idx = 0
@@ -59,11 +68,12 @@ def split_text_on_tokens(
 
     while start_idx < len(input_tokens):
         chunk_text = decode(list(chunk_tokens))
-        result.append(chunk_text)  # Append chunked text as string
+        chunks.append(chunk_text)
+        starts.append(len(decode(input_tokens[:start_idx])))
         if cur_idx == len(input_tokens):
             break
         start_idx += chunk_size - chunk_overlap
         cur_idx = min(start_idx + chunk_size, len(input_tokens))
         chunk_tokens = input_tokens[start_idx:cur_idx]
 
-    return result
+    return chunks, starts

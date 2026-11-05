@@ -134,7 +134,7 @@ def _prepare_embed_texts(
     snippets: list[str] = []
 
     for text in input:
-        split_texts = split_text_on_tokens(
+        split_texts, _starts = split_text_on_tokens(
             text,
             chunk_size=batch_max_tokens,
             chunk_overlap=chunk_overlap,
